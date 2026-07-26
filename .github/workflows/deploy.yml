@@ -1,6 +1,7 @@
 name: wxread-auto-read
 
 permissions:
+  contents: read
   issues: write
 
 on:
