@@ -3,7 +3,7 @@
 读取环境变量:
   WXREAD_COOKIES  - weread 登录 cookie JSON（含 wr_skey），也可放同目录 wxread_cookies.json
   WXREAD_BOOK     - 阅读器 URL，如 https://weread.qq.com/web/reader/xxxx
-  WXREAD_PAGES    - 滚动屏数（显式设置时优先，覆盖分钟换算）
+  WXREAD_PAGES    - 滚动屏数（可选覆盖；设了 WXREAD_MINUTES 时以分钟为准，留空不生效）
   WXREAD_STEP_MS  - 每屏间隔毫秒（默认 3000）
   WXREAD_MINUTES  - 阅读总时长（分钟）；未设 WXREAD_PAGES 时按此换算屏数（默认 60）
 
@@ -42,13 +42,14 @@ def main() -> int:
     pages_env = os.environ.get("WXREAD_PAGES")
     step = int(os.environ.get("WXREAD_STEP_MS", "3000"))
 
-    if pages_env is not None:
-        pages = int(pages_env)
-    elif minutes is not None:
+    # 优先按分钟换算（用户核心诉求：控制阅读总时长）；仅当显式设了 WXREAD_PAGES 时才以屏数覆盖
+    if minutes is not None and minutes.strip() != "":
         # 按分钟换算滚动屏数：每分钟 = 60000 / step 屏（四舍五入，保底 1）
         pages = max(1, int(round(int(minutes) * 60000 / step)))
+    elif pages_env is not None and pages_env.strip() != "":
+        pages = int(pages_env)
     else:
-        pages = 30
+        pages = 30  # 兜底默认（约 90 秒）；正常由 WXREAD_MINUTES 控制
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
