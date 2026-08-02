@@ -12,7 +12,7 @@ on:
 jobs:
   read:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +33,7 @@ jobs:
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
           WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '30' }}
+          WXREAD_MINUTES: ${{ secrets.WXREAD_MINUTES || '60' }}
         run: python main.py
 
       - name: Cookie 过期提醒
