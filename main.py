@@ -3,8 +3,9 @@
 读取环境变量:
   WXREAD_COOKIES  - weread 登录 cookie JSON（含 wr_skey），也可放同目录 wxread_cookies.json
   WXREAD_BOOK     - 阅读器 URL，如 https://weread.qq.com/web/reader/xxxx
-  WXREAD_PAGES    - 滚动屏数（默认 30）
+  WXREAD_PAGES    - 滚动屏数（显式设置时优先，覆盖分钟换算）
   WXREAD_STEP_MS  - 每屏间隔毫秒（默认 3000）
+  WXREAD_MINUTES  - 阅读总时长（分钟）；未设 WXREAD_PAGES 时按此换算屏数（默认 60）
 
 原理: 注入 cookie 后打开书，滚动触发 weread 自身签名的 /web/book/read 请求，
       从而记录阅读进度；周期性调用 window.__WRPA__.sr 续期 wr_skey。
@@ -37,8 +38,17 @@ def load_cookies():
 def main() -> int:
     cookies = load_cookies()
     book_url = os.environ.get("WXREAD_BOOK", BOOK_DEFAULT)
-    pages = int(os.environ.get("WXREAD_PAGES", "30"))
+    minutes = os.environ.get("WXREAD_MINUTES")
+    pages_env = os.environ.get("WXREAD_PAGES")
     step = int(os.environ.get("WXREAD_STEP_MS", "3000"))
+
+    if pages_env is not None:
+        pages = int(pages_env)
+    elif minutes is not None:
+        # 按分钟换算滚动屏数：每分钟 = 60000 / step 屏（四舍五入，保底 1）
+        pages = max(1, int(round(int(minutes) * 60000 / step)))
+    else:
+        pages = 30
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
