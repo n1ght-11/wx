@@ -1,8 +1,8 @@
 name: wxread-legacy
 
-# 老版本（takukaiyo/wxread 路线）实验工作流：直接 POST weread 后端 read 接口报阅读时长，绕过浏览器前端计时器。
-# 与现有 deploy.yml（Playwright 路线，保每天打卡）互不干扰：本工作流仅手动触发，不挂定时。
-# 验证通过后再决定是否替换每日定时。
+# 老版本（takukaiyo/wxread 路线）工作流：直接 POST weread 后端 read 接口报阅读时长，绕过浏览器前端计时器。
+# 与现有 deploy.yml（Playwright 路线，保每天打卡）互不干扰。
+# 每日 01:00（北京）自动跑 60 分钟；也可手动 workflow_dispatch（默认 4≈2分钟，用于验证）。
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +10,8 @@ on:
         description: '阅读次数（每次约30秒）。4≈2分钟, 6≈3分钟, 120=60分钟'
         required: false
         default: '4'
+  schedule:
+    - cron: '0 17 * * *'   # 北京时间每日 01:00
 
 jobs:
   read:
@@ -33,7 +35,7 @@ jobs:
         env:
           WXREAD_CURL_BASH: ${{ secrets.WXREAD_CURL_BASH }}
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
-          READ_NUM: ${{ github.event.inputs.read_num }}
+          READ_NUM: ${{ github.event.inputs.read_num || '120' }}
         run: |
           cd legacy
           python main.py
