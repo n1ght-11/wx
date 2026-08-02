@@ -1,0 +1,39 @@
+name: wxread-legacy
+
+# 老版本（takukaiyo/wxread 路线）实验工作流：直接 POST weread 后端 read 接口报阅读时长，绕过浏览器前端计时器。
+# 与现有 deploy.yml（Playwright 路线，保每天打卡）互不干扰：本工作流仅手动触发，不挂定时。
+# 验证通过后再决定是否替换每日定时。
+on:
+  workflow_dispatch:
+    inputs:
+      read_num:
+        description: '阅读次数（每次约30秒）。4≈2分钟, 6≈3分钟, 120=60分钟'
+        required: false
+        default: '4'
+
+jobs:
+  read:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Set DNS to Google DNS
+        run: |
+          echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+          echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests==2.32.3
+      - name: Run legacy reader
+        env:
+          WXREAD_CURL_BASH: ${{ secrets.WXREAD_CURL_BASH }}
+          WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
+          READ_NUM: ${{ github.event.inputs.read_num }}
+        run: |
+          cd legacy
+          python main.py
