@@ -32,8 +32,8 @@ jobs:
         env:
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
           WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
-          WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '30' }}
           WXREAD_MINUTES: ${{ secrets.WXREAD_MINUTES || '60' }}
+          WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
         run: python main.py
 
       - name: Cookie 过期提醒
