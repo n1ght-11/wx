@@ -51,11 +51,28 @@ def main() -> int:
     else:
         pages = 30  # 兜底默认（约 90 秒）；正常由 WXREAD_MINUTES 控制
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
-        context = browser.new_context()
-        context.add_cookies(cookies)
-        page = context.new_page()
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    # 抹掉 Playwright 自动化标记，避免 weread 阅读计时被风控截断
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            )
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                )
+            )
+            # 进一步抹掉 navigator.webdriver，使 weread 认为这是真实浏览器
+            context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+            )
+            context.add_cookies(cookies)
+            page = context.new_page()
 
         read_hit = {"n": 0}
 
@@ -105,6 +122,24 @@ def main() -> int:
 
         page.wait_for_timeout(2000)
         print(f"[reader] done. read 请求命中数: {read_hit['n']}", flush=True)
+
+        # 诊断：回查 weread 实际记录的阅读时长（毫秒），验证计时是否真的生效
+        # 若 readingTime 远小于 60*60*1000，说明 weread 仍判定为非真实阅读
+        try:
+            bid = book_url.split("/reader/")[1].split("#")[0].split("?")[0]
+            detail = page.evaluate(
+                """async (bookId) => {
+                    try {
+                        const r = await fetch('/api/book/readdetail?bookId=' + bookId + '&readingDetailType=0');
+                        const j = await r.json();
+                        return JSON.stringify(j);
+                    } catch(e) { return 'ERR ' + e; }
+                }""",
+                bid,
+            )
+            print(f"[reader] readdetail(raw): {detail}", flush=True)
+        except Exception as e:
+            print(f"[reader] readdetail query failed: {e}", flush=True)
         if read_hit["n"] == 0:
             print("[reader] ❌ COOKIE_EXPIRED: 阅读请求 0 命中，weread 登录态可能已失效。")
             print("[reader]    请本地重新运行 python export_cookies.py 导出新 cookie，再用 deploy_push.js 更新 Secret WXREAD_COOKIES，然后手动 Run workflow 验证。")
