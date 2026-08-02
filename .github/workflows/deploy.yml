@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '0 17 * * *'      # UTC 17:00 = 北京时间 01:00
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: '阅读时长（分钟）。默认 60（每日定时跑）；手动测试可填 5 快速验证'
+        required: false
+        default: '60'
 
 jobs:
   read:
@@ -32,7 +37,7 @@ jobs:
         env:
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
           WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
-          WXREAD_MINUTES: ${{ secrets.WXREAD_MINUTES || '60' }}
+          WXREAD_MINUTES: ${{ github.event.inputs.minutes || secrets.WXREAD_MINUTES || '60' }}
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
         run: python main.py
 
