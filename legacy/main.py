@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import logging
+import socket
+import threading
 
 import config
 from reader import ReaderEvent, ReaderConfig, run_reading
+
+# 全局 socket 超时兜底：防止 DNS/网络卡死导致整个脚本无限挂起
+# （requests 的 timeout 参数不一定能覆盖 DNS 解析阶段）
+socket.setdefaulttimeout(25)
 
 logging.basicConfig(
     level=logging.INFO,
