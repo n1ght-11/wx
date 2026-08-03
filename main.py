@@ -13,6 +13,7 @@
 import os
 import sys
 import json
+import random
 
 from playwright.sync_api import sync_playwright
 
@@ -51,8 +52,23 @@ def main() -> int:
     print(f"[reader] book_url={book_url} pages={pages} step={step}ms", flush=True)
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = pw.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-features=CalculateNativeWinOcclusion",
+            ],
+        )
         context = browser.new_context()
+        # 关键：headless 下 visibilityState 默认 'hidden'，weread 据此停发阅读心跳 / 不累计时长。
+        # 强制为 visible 让客户端持续发 /web/book/read 信标。
+        context.add_init_script(
+            "Object.defineProperty(Document.prototype, 'visibilityState', { get: () => 'visible' });"
+            "Object.defineProperty(Document.prototype, 'hidden', { get: () => false });"
+        )
         context.add_cookies(cookies)
         page = context.new_page()
 
@@ -81,7 +97,17 @@ def main() -> int:
 
         for i in range(pages):
             page.mouse.wheel(0, 800)
-            page.wait_for_timeout(step)
+            # 拟人翻页：每 3 屏按一次 PageDown，触发 weread 进度保存（进度保存才发信标）
+            if i % 3 == 2:
+                try:
+                    page.keyboard.press("PageDown")
+                except Exception:
+                    pass
+            # 拟人节奏：基础间隔 + 抖动，每 15 屏插入一次 3~8 秒长停顿，避免被判定为脚本
+            wait = step + random.randint(-800, 1200)
+            if i % 15 == 14:
+                wait += random.randint(3000, 8000)
+            page.wait_for_timeout(max(800, wait))
             if i % 10 == 9:
                 try:
                     page.evaluate(
