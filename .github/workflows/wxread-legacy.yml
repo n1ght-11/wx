@@ -35,7 +35,7 @@ jobs:
         env:
           WXREAD_CURL_BASH: ${{ secrets.WXREAD_CURL_BASH }}
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
-          READ_NUM: ${{ github.event.inputs.read_num || '4' }}
+          READ_NUM: ${{ github.event.inputs.read_num || '120' }}
         run: |
           cd legacy
           python main.py
