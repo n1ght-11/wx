@@ -13,6 +13,10 @@ on:
         description: '阅读时长（分钟）。默认 60（每日定时跑）；手动测试可填 5 快速验证'
         required: false
         default: '60'
+      diag:
+        description: '诊断模式（1=开启 DOM/网络/console 诊断日志，便于排查阅读信标为何不触发）'
+        required: false
+        default: '1'
 
 jobs:
   read:
@@ -39,6 +43,7 @@ jobs:
           WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
           WXREAD_MINUTES: ${{ github.event.inputs.minutes || secrets.WXREAD_MINUTES || '60' }}
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
+          WXREAD_DIAG: ${{ github.event.inputs.diag || '1' }}
         run: python main.py
 
       - name: Cookie 过期提醒
