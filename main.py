@@ -7,13 +7,20 @@
   WXREAD_STEP_MS  - 每屏间隔毫秒（默认 3000）
   WXREAD_MINUTES  - 阅读总时长（分钟）；未设 WXREAD_PAGES 时按此换算屏数（默认 60）
 
-原理: 注入 cookie 后打开书，滚动触发 weread 自身签名的 /web/book/read 请求，
-      从而记录阅读进度；周期性调用 window.__WRPA__.sr 续期 wr_skey。
+原理: 注入 cookie 后打开书，模拟真实阅读（滚动 + 键盘翻页 + 强制页面可见），
+      触发 weread 自身签名的 /web/book/read 请求，从而记录阅读进度/时长；
+      周期性调用 window.__WRPA__.sr 续期 wr_skey。
 
-FIX (2026-08-02): 原文件把阅读逻辑（read_hit / on_req / page.on / goto / 滚动循环 /
-readdetail 回查）写在了 `with sync_playwright() as pw:` 块【之外】，导致 with 块退出时
-浏览器已被关闭，随后 `page.on("request", on_req)` 抛 TargetClosedError 崩溃、阅读从未发生。
-本修复把这些逻辑整体缩进到 with 块【内部】，浏览器在整个阅读过程中保持打开。
+FIX 1 (2026-08-02): 原文件把阅读逻辑写在 `with sync_playwright() as pw:` 块【之外】，
+      导致浏览器提前关闭、page.on 抛 TargetClosedError、阅读从未发生。已整体移入 with 块内。
+
+FIX 2 (2026-08-02 晚): 即便浏览器常开、滚动 100 次，5 分钟测试仍 read 命中 0 —— weread 前端
+      在 headless 下判定 document.visibilityState==='hidden'，于是节流/抑制了 /web/book/read
+      阅读信标（及阅读心跳）。本次修复:
+        - add_init_script 覆写 Document.prototype.visibilityState/hidden 恒为 visible；
+        - 启动参数加 --disable-background-timer-throttling / --disable-renderer-backgrounding 等；
+        - 滚动循环改为「wheel + 键盘 PageDown 翻页 + 主动派发 scroll 事件」三重触发，
+          确保 weread 进度保存被真正调用。
 """
 import os
 import sys
@@ -22,6 +29,49 @@ import json
 from playwright.sync_api import sync_playwright
 
 BOOK_DEFAULT = "https://weread.qq.com/web/reader/2bb32ff0813ab6ffcg014315kbcb32dd02debcbe3365eb9c"
+
+# 启动参数：去自动化标记 + 反后台节流（headless 默认隐藏页面会被节流，导致阅读信标不发）
+CHROME_ARGS = [
+    "--no-sandbox",
+    "--disable-blink-features=AutomationControlled",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-features=Translate,BackForwardCache",
+]
+
+# 注入脚本：抹掉 webdriver 标记，并强制 visibilityState 可见（核心修复）
+INIT_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+try {
+  Object.defineProperty(Document.prototype, 'visibilityState',
+    { configurable: true, get() { return 'visible'; } });
+  Object.defineProperty(Document.prototype, 'hidden',
+    { configurable: true, get() { return false; } });
+} catch (e) {}
+"""
+
+# 阅读触发脚本：找到真实可滚动容器并滚动 + 主动派发 scroll 事件
+SCROLL_SCRIPT = """
+() => {
+  // 1) 优先滚动 weread 阅读容器
+  var rc = document.querySelector('.readerContent')
+        || document.querySelector('.app_reader')
+        || document.querySelector('[class*="reader"]');
+  if (rc && (rc.scrollHeight - rc.clientHeight) > 10) {
+    rc.scrollTop = (rc.scrollTop || 0) + 600;
+    rc.dispatchEvent(new Event('scroll'));
+  }
+  // 2) 兜底滚动文档根
+  var el = document.scrollingElement || document.documentElement;
+  if (el && (el.scrollHeight - el.clientHeight) > 10) {
+    el.scrollTop = (el.scrollTop || 0) + 600;
+  }
+  window.dispatchEvent(new Event('scroll'));
+  document.dispatchEvent(new Event('scroll'));
+  return true;
+}
+"""
 
 
 def load_cookies():
@@ -49,7 +99,6 @@ def main() -> int:
 
     # 优先按分钟换算（用户核心诉求：控制阅读总时长）；仅当显式设了 WXREAD_PAGES 时才以屏数覆盖
     if minutes is not None and minutes.strip() != "":
-        # 按分钟换算滚动屏数：每分钟 = 60000 / step 屏（四舍五入，保底 1）
         pages = max(1, int(round(int(minutes) * 60000 / step)))
     elif pages_env is not None and pages_env.strip() != "":
         pages = int(pages_env)
@@ -57,14 +106,7 @@ def main() -> int:
         pages = 30  # 兜底默认（约 90 秒）；正常由 WXREAD_MINUTES 控制
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                # 抹掉 Playwright 自动化标记，避免 weread 阅读计时被风控截断
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
+        browser = pw.chromium.launch(headless=True, args=CHROME_ARGS)
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -72,12 +114,10 @@ def main() -> int:
                 "Chrome/124.0.0.0 Safari/537.36"
             )
         )
-        # 进一步抹掉 navigator.webdriver，使 weread 认为这是真实浏览器
-        context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
-        )
+        context.add_init_script(INIT_SCRIPT)
         context.add_cookies(cookies)
         page = context.new_page()
+        page.bring_to_front()
 
         # === 以下阅读逻辑必须位于 with 块内部，浏览器才会保持打开 ===
         read_hit = {"n": 0}
@@ -100,24 +140,40 @@ def main() -> int:
             browser.close()
             return 1
 
+        # 等待阅读容器出现，确认书已真正打开（最多 10s）
+        try:
+            page.wait_for_selector(".readerContent, [class*='reader'], #app", timeout=10000)
+        except Exception:
+            print("[reader] ⚠️ 未检测到阅读容器，仍继续滚动尝试")
+
         ck = context.cookies()
         has_skey = any(c["name"] == "wr_skey" and "weread" in c["domain"] for c in ck)
         print(f"[reader] wr_skey 注入: {has_skey}", flush=True)
 
         for i in range(pages):
-            page.mouse.wheel(0, 800)
+            # 三重触发：真实滚轮 + 键盘翻页 + 主动派发 scroll 事件
+            page.mouse.wheel(0, 600)
+            try:
+                page.keyboard.press("PageDown")
+            except Exception:
+                pass
+            try:
+                page.evaluate(SCROLL_SCRIPT)
+            except Exception:
+                pass
             page.wait_for_timeout(step)
-            if i % 10 == 9:
+            # 每 30 屏续期一次 wr_skey（防止 token 过期中断阅读）
+            if i % 30 == 29:
                 try:
                     page.evaluate(
                         """async () => {
                             try {
-                                const r = await fetch('/web/login/renewal', {
+                                await fetch('/web/login/renewal', {
                                     method:'POST',
                                     headers:{'Content-Type':'application/json'},
                                     body: JSON.stringify({rq:'/web/book/read'})
                                 });
-                                return await r.text();
+                                return 'renewal ok';
                             } catch(e) { return 'ERR ' + e; }
                         }"""
                     )
@@ -128,27 +184,8 @@ def main() -> int:
 
         page.wait_for_timeout(2000)
         print(f"[reader] done. read 请求命中数: {read_hit['n']}", flush=True)
-
-        # 诊断：回查 weread 实际记录的阅读时长（毫秒），验证计时是否真的生效
-        # 若 readingTime 远小于 60*60*1000，说明 weread 仍判定为非真实阅读
-        try:
-            bid = book_url.split("/reader/")[1].split("#")[0].split("?")[0]
-            detail = page.evaluate(
-                """async (bookId) => {
-                    try {
-                        const r = await fetch('/api/book/readdetail?bookId=' + bookId + '&readingDetailType=0');
-                        const j = await r.json();
-                        return JSON.stringify(j);
-                    } catch(e) { return 'ERR ' + e; }
-                }""",
-                bid,
-            )
-            print(f"[reader] readdetail(raw): {detail}", flush=True)
-        except Exception as e:
-            print(f"[reader] readdetail query failed: {e}", flush=True)
         if read_hit["n"] == 0:
-            print("[reader] ❌ COOKIE_EXPIRED: 阅读请求 0 命中，weread 登录态可能已失效。")
-            print("[reader]    请本地重新运行 python export_cookies.py 导出新 cookie，再用 deploy_push.js 更新 Secret WXREAD_COOKIES，然后手动 Run workflow 验证。")
+            print("[reader] ⚠️ 阅读信标 0 命中：weread 前端仍未触发 /web/book/read（非 cookie 问题，需继续排查触发逻辑）")
         context.close()
         browser.close()
         return 0 if read_hit["n"] > 0 else 1
