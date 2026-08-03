@@ -42,6 +42,8 @@ FIX_SYNCKEY_URL = "https://weread.qq.com/web/book/chapterInfos"
 SEARCH_URL = "https://weread.qq.com/web/search/global"
 WEREAD_HOME = "https://weread.qq.com/"
 REQUEST_TIMEOUT = 15
+# 连续 N 次阅读未被 weread 确认（返回 {}）即终止运行，杜绝 pr=0 / cookie 失效导致的死循环
+MAX_NO_SUCC_RETRIES = 3
 BROWSER_RESPONSE_TIMEOUT_MS = 20_000
 DEFAULT_BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -366,6 +368,7 @@ def run_reading(
         emit(progress_callback, "INFO", f"一共需要阅读 {config.read_num} 次")
         last_time = int(time.time()) - 30
         payload = copy.deepcopy(config.data)
+        no_succ_streak = 0
 
         while success_count < config.read_num:
             if is_cancelled(should_cancel):
@@ -395,6 +398,7 @@ def run_reading(
             res_data = response.json()
 
             if "succ" in res_data:
+                no_succ_streak = 0
                 if "synckey" in res_data:
                     last_time = this_time
                     success_count += 1
@@ -410,7 +414,20 @@ def run_reading(
                     emit(progress_callback, "WARNING", "无 synckey，尝试修复")
                     fix_no_synckey(config)
             else:
-                emit(progress_callback, "WARNING", "cookie 已过期，尝试刷新")
+                no_succ_streak += 1
+                emit(
+                    progress_callback,
+                    "WARNING",
+                    f"阅读未确认(第 {no_succ_streak} 次)，响应={res_data}；"
+                    f"可能 pr 非法或 cookie 失效",
+                )
+                if no_succ_streak >= MAX_NO_SUCC_RETRIES:
+                    msg = (
+                        f"连续 {MAX_NO_SUCC_RETRIES} 次阅读未被微信读书确认，"
+                        f"终止运行以避免死循环。最后一次响应={res_data}"
+                    )
+                    emit(progress_callback, "ERROR", msg)
+                    return ReaderResult(status="failed", success_count=success_count, error=msg)
                 refresh_cookie(config, progress_callback)
 
         emit(progress_callback, "INFO", "阅读脚本已完成")
@@ -648,3 +665,4 @@ def maybe_push_error(config: ReaderConfig, message: str) -> None:
     if not config.push_method:
         return
     push(message, config.push_method, PushSettings.from_reader_config(config))
+
