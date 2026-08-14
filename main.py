@@ -127,9 +127,14 @@ def main() -> int:
                 code = "?"
                 try:
                     j = json.loads(body)
-                    code = j.get("errCode", j.get("err", j.get("code", "?")))
-                    if code in (0, "0", None, "success", "SUCCESS"):
+                    # weread read 信标成功格式是 {"succ":1,...}，不是 errCode:0
+                    if j.get("succ") == 1:
                         accepted += 1
+                        code = "succ:1"
+                    else:
+                        code = j.get("errCode", j.get("err", j.get("code", "?")))
+                        if code in (0, "0", None, "success", "SUCCESS"):
+                            accepted += 1
                 except Exception:
                     # 非 JSON：HTTP 状态 2xx 视为接受
                     if 200 <= resp.status < 300:
@@ -202,11 +207,19 @@ def main() -> int:
         try:
             readinfo_raw = page.evaluate(
                 """async (bookId) => {
-                    const url = bookId
-                        ? `/web/book/readInfo?bookId=${bookId}&finishedBookCount=1&finishedBookIndex=1&finishedDate=1`
-                        : '/web/book/readInfo?finishedBookCount=1&finishedBookIndex=1&finishedDate=1';
-                    const r = await fetch(url, {credentials: 'include'});
-                    return await r.text();
+                    const tryFetch = async (url) => {
+                        const r = await fetch(url, {credentials: 'include'});
+                        return await r.text();
+                    };
+                    let t = '';
+                    if (bookId) {
+                        t = await tryFetch(`/web/book/readInfo?bookId=${bookId}&finishedBookCount=1&finishedBookIndex=1&finishedDate=1`);
+                        if (t.includes('-2003')) t = '';
+                    }
+                    if (!t || t.includes('-2003')) {
+                        t = await tryFetch('/web/book/readInfo?finishedBookCount=1&finishedBookIndex=1&finishedDate=1');
+                    }
+                    return t;
                 }""",
                 book_id["v"],
             )
