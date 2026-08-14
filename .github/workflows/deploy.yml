@@ -46,7 +46,7 @@ jobs:
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
         run: python main.py
 
-      - name: Cookie 过期提醒
+      - name: Cookie 过期提醒（GitHub Issue）
         if: failure()
         uses: actions/github-script@v7
         with:
@@ -68,3 +68,17 @@ jobs:
               title,
               body: '每日自动阅读任务失败（阅读请求 0 命中或被跳登录页），很可能是 weread 登录 cookie 已失效。\n\n请本地重新运行 `python export_cookies.py` 导出新 cookie，再用 `deploy_push.js` 更新 Secret `WXREAD_COOKIES`，然后到 Actions 页面手动 Run workflow 验证。'
             });
+
+      - name: 微信推送通知（Server酱）
+        if: failure()
+        env:
+          SC_KEY: ${{ secrets.SC_SENDKEY }}
+        run: |
+          if [ -z "$SC_KEY" ]; then
+            echo "SC_SENDKEY 未设置，跳过微信推送"
+            exit 0
+          fi
+          curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
+            -d "title=🍪 微信读书 Cookie 可能已过期" \
+            -d "desp=每日自动阅读任务失败，很可能是 weread 登录 cookie 已失效。\n\n**失败时间：** $(date -u -d '+8 hours' '+%Y-%m-%d %H:%M')\n\n**处理方法：**\n1. 本地浏览器登录 weread.qq.com\n2. 重新导出 cookie\n3. 更新 GitHub Secret \`WXREAD_COOKIES\`\n4. 手动触发 workflow 验证\n\n[查看运行日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          echo "微信推送已发送"
