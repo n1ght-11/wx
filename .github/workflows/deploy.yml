@@ -10,14 +10,14 @@ on:
   workflow_dispatch:
     inputs:
       minutes:
-        description: '阅读时长（分钟）。默认 60（每日定时跑）；手动测试可填 5 快速验证'
+        description: '阅读时长（分钟）。定时触发自动随机 60-240 分钟；手动填写覆盖随机值'
         required: false
         default: '60'
 
 jobs:
   read:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
 
@@ -33,11 +33,16 @@ jobs:
           playwright install chromium
           playwright install-deps
 
+      - name: Generate random duration
+        if: github.event_name == 'schedule'
+        id: rand
+        run: echo "minutes=$((RANDOM % 181 + 60))" >> $GITHUB_OUTPUT
+
       - name: Run reader
         env:
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
           WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
-          WXREAD_MINUTES: ${{ github.event.inputs.minutes || secrets.WXREAD_MINUTES || '60' }}
+          WXREAD_MINUTES: ${{ github.event.inputs.minutes || steps.rand.outputs.minutes || '60' }}
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
         run: python main.py
 
