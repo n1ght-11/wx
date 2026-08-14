@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       minutes:
-        description: '阅读时长（分钟）。定时触发自动随机 60-240 分钟；手动填写覆盖随机值'
+        description: '阅读时长（分钟）。留空 = 与定时任务一致，自动随机 60-240 分钟；填写则覆盖随机值'
         required: false
-        default: '60'
+        default: ''
 
 jobs:
   read:
@@ -34,9 +34,12 @@ jobs:
           playwright install-deps
 
       - name: Generate random duration
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' || inputs.minutes == ''
         id: rand
-        run: echo "minutes=$((RANDOM % 181 + 60))" >> $GITHUB_OUTPUT
+        run: |
+          M=$((RANDOM % 181 + 60))
+          echo "minutes=${M}" >> $GITHUB_OUTPUT
+          echo "今日随机时长: ${M} 分钟"
 
       - name: Run reader
         id: reader
@@ -63,13 +66,13 @@ jobs:
           fi
           NOW=$(date -u -d '+8 hours' '+%Y-%m-%d %H:%M')
           desp="**完成时间：** ${NOW}
-          **计划阅读：** ${MINUTES:-?} 分钟
+          **今日随机时长：**【${MINUTES:-?}】分钟
           **阅读请求：** 发送 ${SENT:-?} 次 / 后台接受 ${ACCEPTED:-?} 次
           **errCode 分布：** \`${ERR_CODES:-n/a}\`
 
           [查看运行日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
-            --data-urlencode "title=📚 微信读书完成：${MINUTES:-?} 分钟（接受 ${ACCEPTED:-?} 次）" \
+            --data-urlencode "title=📚 今日随机时长【${MINUTES:-?}】分钟·发送${SENT:-?}/接受${ACCEPTED:-?}" \
             --data-urlencode "desp=${desp}"
           echo "微信推送已发送"
 
