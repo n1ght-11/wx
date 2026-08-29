@@ -6,7 +6,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 17 * * *'      # UTC 17:00 = 北京时间 01:00
+    - cron: '23 16 * * *'      # UTC 16:23 = 北京时间 00:23（避开整点高负载时段）
   workflow_dispatch:
     inputs:
       minutes:
@@ -14,10 +14,12 @@ on:
         required: false
         default: ''
 
+# 两个 job 串行：GitHub-hosted runner 的 job execution time 上限是 6h/job（不是每次运行），
+# 因此拆成 read1 / read2 两个 job，各自独立计时，中间 sleep 600s 作为间隔。
 jobs:
-  read:
+  read1:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +41,7 @@ jobs:
         run: |
           M=$((RANDOM % 181 + 60))
           echo "minutes=${M}" >> $GITHUB_OUTPUT
-          echo "今日随机时长: ${M} 分钟"
+          echo "第①轮随机时长: ${M} 分钟"
 
       - name: Run reader
         id: reader
@@ -50,7 +52,7 @@ jobs:
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
         run: python main.py
 
-      - name: 微信推送 - 阅读完成日报（成功也推）
+      - name: 微信推送 - 第①轮完成日报
         if: success()
         env:
           SC_KEY: ${{ secrets.SC_SENDKEY }}
@@ -66,13 +68,13 @@ jobs:
           fi
           NOW=$(date -u -d '+8 hours' '+%Y-%m-%d %H:%M')
           desp="**完成时间：** ${NOW}
-          **今日随机时长：**【${MINUTES:-?}】分钟
+          **第①轮时长：**【${MINUTES:-?}】分钟
           **阅读请求：** 发送 ${SENT:-?} 次 / 后台接受 ${ACCEPTED:-?} 次
           **errCode 分布：** \`${ERR_CODES:-n/a}\`
 
           [查看运行日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
-            --data-urlencode "title=📚 今日随机时长【${MINUTES:-?}】分钟·发送${SENT:-?}/接受${ACCEPTED:-?}" \
+            --data-urlencode "title=📚【第①轮】时长【${MINUTES:-?}】分钟·发送${SENT:-?}/接受${ACCEPTED:-?}" \
             --data-urlencode "desp=${desp}"
           echo "微信推送已发送"
 
@@ -96,10 +98,10 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               title,
-              body: '每日自动阅读任务失败（阅读请求 0 命中或被跳登录页），很可能是 weread 登录 cookie 已失效。\n\n请本地重新运行 `python export_cookies.py` 导出新 cookie，再用 `deploy_push.js` 更新 Secret `WXREAD_COOKIES`，然后到 Actions 页面手动 Run workflow 验证。'
+              body: '每日自动阅读任务失败（阅读请求 0 命中或被跳登录页），很可能是 weread 登录 cookie 已失效。\n\n处理：本地浏览器登录 weread.qq.com → 重新导出 cookie → 用 gh secret set WXREAD_COOKIES -R n1ght-11/wx < wxread_cookies.json 更新，再手动 Run workflow 验证。'
             });
 
-      - name: 微信推送通知（Server酱 · 失败）
+      - name: 微信推送通知（第①轮 · 失败）
         if: failure()
         env:
           SC_KEY: ${{ secrets.SC_SENDKEY }}
@@ -119,14 +121,114 @@ jobs:
             *) REASON="未知失败，查看日志";;
           esac
           curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
-            --data-urlencode "title=❌ 微信读书任务失败：${REASON}" \
+            --data-urlencode "title=❌【第①轮】微信读书任务失败：${REASON}" \
             --data-urlencode "desp=**失败时间：** ${NOW}
             **失败原因：** ${REASON}
 
             **处理方法：**
             1. 本地浏览器登录 weread.qq.com
             2. 重新导出 cookie
-            3. 更新 GitHub Secret \`WXREAD_COOKIES\`
+            3. 用 \`gh secret set WXREAD_COOKIES -R n1ght-11/wx < wxread_cookies.json\` 更新
+            4. 手动触发 workflow 验证
+
+            [查看运行日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          echo "微信推送已发送"
+
+  read2:
+    needs: [read1]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: 间隔 10 分钟（等第①轮结束）
+        run: |
+          echo "第①轮已完成，等待 600 秒后启动第②轮..."
+          sleep 600
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          playwright install chromium
+          playwright install-deps
+
+      - name: Generate random duration
+        if: github.event_name == 'schedule' || inputs.minutes == ''
+        id: rand
+        run: |
+          M=$((RANDOM % 181 + 60))
+          echo "minutes=${M}" >> $GITHUB_OUTPUT
+          echo "第②轮随机时长: ${M} 分钟"
+
+      - name: Run reader
+        id: reader
+        env:
+          WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
+          WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
+          WXREAD_MINUTES: ${{ github.event.inputs.minutes || steps.rand.outputs.minutes || '60' }}
+          WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
+        run: python main.py
+
+      - name: 微信推送 - 第②轮完成日报
+        if: success()
+        env:
+          SC_KEY: ${{ secrets.SC_SENDKEY }}
+          MINUTES: ${{ steps.reader.outputs.minutes }}
+          SENT: ${{ steps.reader.outputs.sent }}
+          ACCEPTED: ${{ steps.reader.outputs.accepted }}
+          ERR_CODES: ${{ steps.reader.outputs.err_codes }}
+          READINFO: ${{ steps.reader.outputs.readinfo }}
+        run: |
+          if [ -z "$SC_KEY" ]; then
+            echo "SC_SENDKEY 未设置，跳过微信推送"
+            exit 0
+          fi
+          NOW=$(date -u -d '+8 hours' '+%Y-%m-%d %H:%M')
+          desp="**完成时间：** ${NOW}
+          **第②轮时长：**【${MINUTES:-?}】分钟
+          **阅读请求：** 发送 ${SENT:-?} 次 / 后台接受 ${ACCEPTED:-?} 次
+          **errCode 分布：** \`${ERR_CODES:-n/a}\`
+
+          [查看运行日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
+            --data-urlencode "title=📚【第②轮】时长【${MINUTES:-?}】分钟·发送${SENT:-?}/接受${ACCEPTED:-?}" \
+            --data-urlencode "desp=${desp}"
+          echo "微信推送已发送"
+
+      - name: 微信推送通知（第②轮 · 失败）
+        if: failure()
+        env:
+          SC_KEY: ${{ secrets.SC_SENDKEY }}
+          STATUS: ${{ steps.reader.outputs.status }}
+          SENT: ${{ steps.reader.outputs.sent }}
+          ERR_CODES: ${{ steps.reader.outputs.err_codes }}
+        run: |
+          if [ -z "$SC_KEY" ]; then
+            echo "SC_SENDKEY 未设置，跳过微信推送"
+            exit 0
+          fi
+          NOW=$(date -u -d '+8 hours' '+%Y-%m-%d %H:%M')
+          case "${STATUS:-unknown}" in
+            cookie_expired_redirect) REASON="打开阅读器被跳回登录页（cookie 失效）";;
+            cookie_expired_no_beacon) REASON="阅读信标 0 发出（cookie 失效或页面异常）";;
+            backend_rejected) REASON="请求发送 ${SENT:-?} 次但后台 0 接受（登录态失效）errCode: \`${ERR_CODES:-n/a}\`";;
+            *) REASON="未知失败，查看日志";;
+          esac
+          curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
+            --data-urlencode "title=❌【第②轮】微信读书任务失败：${REASON}" \
+            --data-urlencode "desp=**失败时间：** ${NOW}
+            **失败原因：** ${REASON}
+
+            **处理方法：**
+            1. 本地浏览器登录 weread.qq.com
+            2. 重新导出 cookie
+            3. 用 \`gh secret set WXREAD_COOKIES -R n1ght-11/wx < wxread_cookies.json\` 更新
             4. 手动触发 workflow 验证
 
             [查看运行日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
