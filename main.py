@@ -1,4 +1,4 @@
-"""wxread 自动阅读器 — 草稿 v4（防卡末页 · 信标停滞跳章）。
+"""wxread 自动阅读器 — v5（防卡末页 · 信标停滞跳章 · 中途鉴权体检）。
 
 在稳定版 v3（响应级 succ:1 统计 + readInfo + GITHUB_OUTPUT 回写）基础上，
 新增「防卡末页」机制：会员到期 / 读完一本书时，weread 进度卡在末页、翻页无下一页
@@ -22,6 +22,7 @@ from playwright.sync_api import sync_playwright
 BOOK_DEFAULT = "https://weread.qq.com/web/reader/2bb32ff0813ab6ffcg014315kbcb32dd02debcbe3365eb9c"
 STEP_MS_DEFAULT = 3000
 STALL_SCREENS = 25   # 连续多少屏无新接受信标 → 判定卡住跳章
+AUTH_GAP_DEFAULT = 15  # 中途体检：连续多少个信标 0 接受且鉴权错误累计同量 → cookie 失效提前中止（0=禁用）
 
 
 def load_cookies():
@@ -163,6 +164,7 @@ def main() -> int:
             return accepted
 
         accepted_total = {"n": 0}
+        last_accept_sent = {"n": 0}   # 最近一次信标被接受时的 sent 计数（鉴权体检用）
 
         page.goto(book_url, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(4000)
@@ -211,7 +213,10 @@ def main() -> int:
                 except Exception:
                     pass
 
-            accepted_total["n"] += drain_responses()
+            acc_incr = drain_responses()
+            accepted_total["n"] += acc_incr
+            if acc_incr > 0:
+                last_accept_sent["n"] = sent["n"]
 
             # —— v4 防卡末页：以「信标停滞」为判据 ——
             if accepted_total["n"] > prev_accepted:
@@ -229,6 +234,22 @@ def main() -> int:
                     page.wait_for_timeout(3000)
                 except Exception as e:
                     print(f"[reader] 跳章失败: {e}", flush=True)
+
+            # —— v5 中途鉴权体检（每 5 屏，零额外请求：复用已拦截的响应统计）——
+            auth_gap = int(os.environ.get("WXREAD_AUTH_GAP", str(AUTH_GAP_DEFAULT)))
+            if auth_gap and i % 5 == 4:
+                gap = sent["n"] - last_accept_sent["n"]
+                auth_n = sum(err_codes.get(k, 0) for k in ("-2010", "-2012", "-2013"))
+                if gap >= auth_gap and auth_n >= auth_gap:
+                    print(f"[reader] ❌ 中途体检: 连续 {gap} 个信标 0 接受 + 鉴权错误累计 {auth_n} 次 → 判定 cookie 失效，提前中止", flush=True)
+                    write_output("status", "cookie_expired_auth")
+                    write_output("sent", sent["n"])
+                    write_output("accepted", accepted_total["n"])
+                    write_output("err_codes", json.dumps(err_codes, ensure_ascii=False))
+                    write_output("readinfo", "")
+                    context.close()
+                    browser.close()
+                    return 1
 
             if i % 50 == 0:
                 print(f"[reader] scroll {i+1}/{pages}, sent={sent['n']}, accepted={accepted_total['n']}, stall={stall}", flush=True)
