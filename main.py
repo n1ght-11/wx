@@ -22,6 +22,7 @@ from playwright.sync_api import sync_playwright
 BOOK_DEFAULT = "https://weread.qq.com/web/reader/2bb32ff0813ab6ffcg014315kbcb32dd02debcbe3365eb9c"
 STEP_MS_DEFAULT = 3000
 STALL_SCREENS = 25   # 连续多少屏无新接受信标 → 判定卡住跳章
+JUMP_MAX = 15         # 跳章上限：超过说明不是卡末页，而是登录态/风控问题，别再空转
 AUTH_GAP_DEFAULT = 15  # 中途体检：连续多少个信标 0 接受且鉴权错误累计同量 → cookie 失效提前中止（0=禁用）
 
 
@@ -225,6 +226,16 @@ def main() -> int:
             else:
                 stall += 1
             if stall >= STALL_SCREENS:
+                if jump_attempt >= JUMP_MAX:
+                    print(f"[reader] ❌ 已跳章 {jump_attempt} 次仍 0 接受 → 判定登录态/风控异常，提前中止（避免昨日 91 次空转）", flush=True)
+                    write_output("status", "stuck_loop")
+                    write_output("sent", sent["n"])
+                    write_output("accepted", accepted_total["n"])
+                    write_output("err_codes", json.dumps(err_codes, ensure_ascii=False))
+                    write_output("readinfo", "")
+                    context.close()
+                    browser.close()
+                    return 1
                 print(f"[reader] ⚠️ 连续 {stall} 屏无新接受信标，判定卡住，跳章(第 {jump_attempt+1} 次) 防卡末页", flush=True)
                 try:
                     jump_to_chapter(page, book_url, jump_attempt)
@@ -299,6 +310,11 @@ def main() -> int:
         elif accepted_total["n"] == 0:
             print(f"[reader] ❌ 后端拒绝: 请求发了 {sent['n']} 次但 0 次被接受，登录态大概率已失效。")
             write_output("status", "backend_rejected")
+            ok = False
+        elif sent["n"] >= 10 and accepted_total["n"] / sent["n"] < 0.2:
+            rate = accepted_total["n"] / sent["n"] * 100
+            print(f"[reader] ❌ 接受率过低: {accepted_total['n']}/{sent['n']} = {rate:.1f}%（正常应 ~99%）→ 判失败，不再假成功")
+            write_output("status", "low_acceptance")
             ok = False
         else:
             write_output("status", "ok")
