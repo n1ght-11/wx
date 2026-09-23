@@ -139,6 +139,8 @@ jobs:
             cookie_expired_no_beacon) REASON="阅读信标 0 发出（cookie 失效或页面异常）";;
             backend_rejected) REASON="请求发送 ${SENT:-?} 次但后台 0 接受（登录态失效）errCode: \`${ERR_CODES:-n/a}\`";;
             cookie_expired_auth) REASON="阅读中途检出登录失效（多个信标 0 接受 + 鉴权错误），已提前中止";;
+            stuck_loop) REASON="连续跳章 15 次仍 0 接受，登录态/风控异常，已提前中止";;
+            low_acceptance) REASON="接受率过低（发送多、后台接受极少，正常应 ~99%）→ 登录态或风控异常";;
             unknown) REASON="阅读器状态未上报（若日志无 reader 输出，多为 Cookie 预检未通过）";;
             *) REASON="未知失败，查看日志";;
           esac
@@ -261,6 +263,8 @@ jobs:
             cookie_expired_no_beacon) REASON="阅读信标 0 发出（cookie 失效或页面异常）";;
             backend_rejected) REASON="请求发送 ${SENT:-?} 次但后台 0 接受（登录态失效）errCode: \`${ERR_CODES:-n/a}\`";;
             cookie_expired_auth) REASON="阅读中途检出登录失效（多个信标 0 接受 + 鉴权错误），已提前中止";;
+            stuck_loop) REASON="连续跳章 15 次仍 0 接受，登录态/风控异常，已提前中止";;
+            low_acceptance) REASON="接受率过低（发送多、后台接受极少，正常应 ~99%）→ 登录态或风控异常";;
             unknown) REASON="阅读器状态未上报（若日志无 reader 输出，多为 Cookie 预检未通过）";;
             *) REASON="未知失败，查看日志";;
           esac
