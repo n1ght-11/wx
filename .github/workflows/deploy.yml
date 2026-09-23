@@ -23,6 +23,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cookie 强校验（shelf/sync，无效快速失败不进入阅读循环）
+        env:
+          WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          cookies = json.loads(os.environ["WXREAD_COOKIES"])
+          header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+          req = urllib.request.Request(
+              "https://weread.qq.com/web/shelf/sync",
+              headers={"Cookie": header,
+                       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"})
+          body = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+          print("shelf/sync 返回:", body[:150])
+          compact = body.replace(" ", "")
+          if '"errCode":-2010' in compact or '"errCode":-2012' in compact or '"errCode":-2013' in compact:
+              raise SystemExit("❌ cookie 无效（shelf/sync 判定登录失效）→ 快速失败，请更新 WXREAD_COOKIES")
+          print("✅ cookie 有效，继续")
+          PY
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -118,6 +138,8 @@ jobs:
             cookie_expired_redirect) REASON="打开阅读器被跳回登录页（cookie 失效）";;
             cookie_expired_no_beacon) REASON="阅读信标 0 发出（cookie 失效或页面异常）";;
             backend_rejected) REASON="请求发送 ${SENT:-?} 次但后台 0 接受（登录态失效）errCode: \`${ERR_CODES:-n/a}\`";;
+            cookie_expired_auth) REASON="阅读中途检出登录失效（多个信标 0 接受 + 鉴权错误），已提前中止";;
+            unknown) REASON="阅读器状态未上报（若日志无 reader 输出，多为 Cookie 预检未通过）";;
             *) REASON="未知失败，查看日志";;
           esac
           curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
@@ -145,6 +167,26 @@ jobs:
           sleep 600
 
       - uses: actions/checkout@v4
+
+      - name: Cookie 强校验（shelf/sync，无效快速失败不进入阅读循环）
+        env:
+          WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          cookies = json.loads(os.environ["WXREAD_COOKIES"])
+          header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+          req = urllib.request.Request(
+              "https://weread.qq.com/web/shelf/sync",
+              headers={"Cookie": header,
+                       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"})
+          body = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+          print("shelf/sync 返回:", body[:150])
+          compact = body.replace(" ", "")
+          if '"errCode":-2010' in compact or '"errCode":-2012' in compact or '"errCode":-2013' in compact:
+              raise SystemExit("❌ cookie 无效（shelf/sync 判定登录失效）→ 快速失败，请更新 WXREAD_COOKIES")
+          print("✅ cookie 有效，继续")
+          PY
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -218,6 +260,8 @@ jobs:
             cookie_expired_redirect) REASON="打开阅读器被跳回登录页（cookie 失效）";;
             cookie_expired_no_beacon) REASON="阅读信标 0 发出（cookie 失效或页面异常）";;
             backend_rejected) REASON="请求发送 ${SENT:-?} 次但后台 0 接受（登录态失效）errCode: \`${ERR_CODES:-n/a}\`";;
+            cookie_expired_auth) REASON="阅读中途检出登录失效（多个信标 0 接受 + 鉴权错误），已提前中止";;
+            unknown) REASON="阅读器状态未上报（若日志无 reader 输出，多为 Cookie 预检未通过）";;
             *) REASON="未知失败，查看日志";;
           esac
           curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
