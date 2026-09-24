@@ -7,9 +7,21 @@
 输出：仓库根目录 STATUS.md
 """
 
+import base64
 import datetime
 import os
 import re
+
+
+def decode_err(plain, b64):
+    """取 errCode 分布。GitHub 会屏蔽疑似密钥的 job output（实测 err_codes 被 skip 成空），
+    因此优先用 base64 旁路还原，取不到再退回明文。"""
+    if b64:
+        try:
+            return base64.b64decode(b64).decode("utf-8")
+        except Exception:
+            return f"<base64 解码失败: {str(b64)[:60]}>"
+    return plain or "n/a"
 
 
 def beijing_now():
@@ -72,9 +84,9 @@ def main():
         head = "❌ 本轮未计入"
 
     r1 = block("①", e("R1_RESULT"), e("R1_STATUS"), e("R1_SENT"), e("R1_ACC"),
-               e("R1_ERR"), e("R1_MIN"), e("R1_START"))
+               decode_err(e("R1_ERR"), e("R1_ERR_B64")), e("R1_MIN"), e("R1_START"))
     r2 = block("②", e("R2_RESULT"), e("R2_STATUS"), e("R2_SENT"), e("R2_ACC"),
-               e("R2_ERR"), e("R2_MIN"), e("R2_START"))
+               decode_err(e("R2_ERR"), e("R2_ERR_B64")), e("R2_MIN"), e("R2_START"))
 
     # 历史表：保留最近 12 条
     hist = []
