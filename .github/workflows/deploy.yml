@@ -1,7 +1,7 @@
 name: wxread-auto-read
 
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 on:
@@ -20,6 +20,13 @@ jobs:
   read1:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    outputs:
+      status: ${{ steps.reader.outputs.status }}
+      sent: ${{ steps.reader.outputs.sent }}
+      accepted: ${{ steps.reader.outputs.accepted }}
+      err_codes: ${{ steps.reader.outputs.err_codes }}
+      minutes: ${{ steps.reader.outputs.minutes }}
+      started: ${{ steps.preflight.outputs.started_at }}
     steps:
       - uses: actions/checkout@v4
 
@@ -174,6 +181,13 @@ jobs:
     needs: [read1]
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    outputs:
+      status: ${{ steps.reader.outputs.status }}
+      sent: ${{ steps.reader.outputs.sent }}
+      accepted: ${{ steps.reader.outputs.accepted }}
+      err_codes: ${{ steps.reader.outputs.err_codes }}
+      minutes: ${{ steps.reader.outputs.minutes }}
+      started: ${{ steps.preflight.outputs.started_at }}
     steps:
       - name: 间隔 10 分钟（等第①轮结束）
         run: |
@@ -305,3 +319,46 @@ jobs:
 
             [查看运行日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           echo "微信推送已发送"
+
+  # —— v11：异步状态板 ——
+  # 解决问题：微信推送有每日限额；一轮阅读 1-3 小时，agent 无法全程值守；用户还得来问。
+  # 方案：跑完把结论写回仓库 STATUS.md，手机开一个固定链接即可，不依赖推送、不需要问任何人。
+  status:
+    needs: [read1, read2]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RUN_ID: ${{ github.run_id }}
+      R1_RESULT: ${{ needs.read1.result }}
+      R1_STATUS: ${{ needs.read1.outputs.status }}
+      R1_SENT: ${{ needs.read1.outputs.sent }}
+      R1_ACC: ${{ needs.read1.outputs.accepted }}
+      R1_ERR: ${{ needs.read1.outputs.err_codes }}
+      R1_MIN: ${{ needs.read1.outputs.minutes }}
+      R1_START: ${{ needs.read1.outputs.started }}
+      R2_RESULT: ${{ needs.read2.result }}
+      R2_STATUS: ${{ needs.read2.outputs.status }}
+      R2_SENT: ${{ needs.read2.outputs.sent }}
+      R2_ACC: ${{ needs.read2.outputs.accepted }}
+      R2_ERR: ${{ needs.read2.outputs.err_codes }}
+      R2_MIN: ${{ needs.read2.outputs.minutes }}
+      R2_START: ${{ needs.read2.outputs.started }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 生成 STATUS.md
+        run: python3 write_status.py
+
+      - name: 提交 STATUS.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add STATUS.md
+          if git diff --cached --quiet; then
+            echo "无变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore(status): 更新运行结论 [skip ci]"
+          git push
