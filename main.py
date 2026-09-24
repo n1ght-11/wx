@@ -97,22 +97,33 @@ def main() -> int:
     print(f"[reader] book_url={book_url} pages={pages} step={step}ms minutes={minutes}", flush=True)
     write_output("minutes", minutes)
 
+    # v13: 本地实测 headful 0 个 -2010、headless/CI 全 -2010 → 疑似 weread 识别 headless
+    HEADLESS = os.environ.get("WXREAD_HEADLESS", "1") == "1"
+    print(f"[reader] 浏览器模式: {'headless' if HEADLESS else 'headful(xvfb)'}", flush=True)
+
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
-            headless=True,
+            headless=HEADLESS,
             args=[
                 "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
                 "--disable-features=CalculateNativeWinOcclusion",
             ],
         )
-        context = browser.new_context()
-        context.add_init_script(
-            "Object.defineProperty(Document.prototype, 'visibilityState', { get: () => 'visible' });"
-            "Object.defineProperty(Document.prototype, 'hidden', { get: () => false });"
+        context = browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            locale="zh-CN",
+            timezone_id="Asia/Shanghai",
         )
+        if HEADLESS:
+            # 伪造可见性本身也是自动化痕迹；headful 下窗口真实可见，不再伪造
+            context.add_init_script(
+                "Object.defineProperty(Document.prototype, 'visibilityState', { get: () => 'visible' });"
+                "Object.defineProperty(Document.prototype, 'hidden', { get: () => false });"
+            )
         context.add_cookies(cookies)
         page = context.new_page()
 
