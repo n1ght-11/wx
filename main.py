@@ -223,6 +223,21 @@ def main() -> int:
             if acc_incr > 0:
                 last_accept_sent["n"] = sent["n"]
 
+            # —— v8 快速定性：坏 cookie 在开局几个信标内就暴露（不必等中途体检 15 个信标 ≈35min）——
+            # 判据三条件同时成立才中止，正常 cookie（接受率 ~99%、无鉴权错误）不会误伤
+            if sent["n"] >= 3:
+                _auth_err = sum(err_codes.get(k, 0) for k in ("-2010", "-2012", "-2013"))
+                if _auth_err >= 1 and accepted_total["n"] / sent["n"] < 0.5:
+                    print(f"[reader] ❌ 快速定性: {accepted_total['n']}/{sent['n']} 接受率过低 + 鉴权错误 {_auth_err} 次 → 登录态/风控异常，立即中止", flush=True)
+                    write_output("status", "low_acceptance")
+                    write_output("sent", sent["n"])
+                    write_output("accepted", accepted_total["n"])
+                    write_output("err_codes", json.dumps(err_codes, ensure_ascii=False))
+                    write_output("readinfo", str(readinfo_raw).replace("\n", " ")[:1500])
+                    context.close()
+                    browser.close()
+                    return 1
+
             # —— v4 防卡末页：以「信标停滞」为判据 ——
             if accepted_total["n"] > prev_accepted:
                 prev_accepted = accepted_total["n"]
@@ -315,7 +330,7 @@ def main() -> int:
             print(f"[reader] ❌ 后端拒绝: 请求发了 {sent['n']} 次但 0 次被接受，登录态大概率已失效。")
             write_output("status", "backend_rejected")
             ok = False
-        elif sent["n"] >= 10 and accepted_total["n"] / sent["n"] < 0.2:
+        elif sent["n"] >= 3 and accepted_total["n"] / sent["n"] < 0.5:
             rate = accepted_total["n"] / sent["n"] * 100
             print(f"[reader] ❌ 接受率过低: {accepted_total['n']}/{sent['n']} = {rate:.1f}%（正常应 ~99%）→ 判失败，不再假成功")
             write_output("status", "low_acceptance")
