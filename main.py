@@ -233,7 +233,7 @@ def main() -> int:
                     write_output("sent", sent["n"])
                     write_output("accepted", accepted_total["n"])
                     write_output("err_codes", json.dumps(err_codes, ensure_ascii=False))
-                    write_output("readinfo", str(readinfo_raw).replace("\n", " ")[:1500])
+                    write_output("readinfo", "")
                     context.close()
                     browser.close()
                     return 1
