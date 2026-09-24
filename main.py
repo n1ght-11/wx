@@ -79,6 +79,10 @@ def jump_to_chapter(page, book_url, attempt):
 
 def main() -> int:
     cookies = load_cookies()
+    # v7: 打印本次实际使用的 cookie 指纹，便于核对「到底用了哪一批 cookie」
+    _skey = next((c.get("value", "") for c in cookies if c.get("name") == "wr_skey"), "")
+    _fp = f"{_skey[:3]}***{_skey[-3:]}" if len(_skey) >= 6 else (_skey or "<缺失>")
+    print(f"[cookie] 共 {len(cookies)} 项 | wr_skey 指纹: {_fp}", flush=True)
     book_url = os.environ.get("WXREAD_BOOK", BOOK_DEFAULT)
     step = int(os.environ.get("WXREAD_STEP_MS", str(STEP_MS_DEFAULT)))
 
