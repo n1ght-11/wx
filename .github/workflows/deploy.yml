@@ -25,6 +25,7 @@ jobs:
       sent: ${{ steps.reader.outputs.sent }}
       accepted: ${{ steps.reader.outputs.accepted }}
       err_codes: ${{ steps.reader.outputs.err_codes }}
+      err_codes_b64: ${{ steps.reader.outputs.err_codes_b64 }}
       minutes: ${{ steps.reader.outputs.minutes }}
       started: ${{ steps.preflight.outputs.started_at }}
     steps:
@@ -186,6 +187,7 @@ jobs:
       sent: ${{ steps.reader.outputs.sent }}
       accepted: ${{ steps.reader.outputs.accepted }}
       err_codes: ${{ steps.reader.outputs.err_codes }}
+      err_codes_b64: ${{ steps.reader.outputs.err_codes_b64 }}
       minutes: ${{ steps.reader.outputs.minutes }}
       started: ${{ steps.preflight.outputs.started_at }}
     steps:
@@ -336,6 +338,7 @@ jobs:
       R1_SENT: ${{ needs.read1.outputs.sent }}
       R1_ACC: ${{ needs.read1.outputs.accepted }}
       R1_ERR: ${{ needs.read1.outputs.err_codes }}
+      R1_ERR_B64: ${{ needs.read1.outputs.err_codes_b64 }}
       R1_MIN: ${{ needs.read1.outputs.minutes }}
       R1_START: ${{ needs.read1.outputs.started }}
       R2_RESULT: ${{ needs.read2.result }}
@@ -343,6 +346,7 @@ jobs:
       R2_SENT: ${{ needs.read2.outputs.sent }}
       R2_ACC: ${{ needs.read2.outputs.accepted }}
       R2_ERR: ${{ needs.read2.outputs.err_codes }}
+      R2_ERR_B64: ${{ needs.read2.outputs.err_codes_b64 }}
       R2_MIN: ${{ needs.read2.outputs.minutes }}
       R2_START: ${{ needs.read2.outputs.started }}
     steps:
