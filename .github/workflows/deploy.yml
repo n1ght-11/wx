@@ -67,6 +67,8 @@ jobs:
           pip install playwright
           playwright install chromium
           playwright install-deps
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+          echo "xvfb: $(which xvfb-run)"
 
       - name: Generate random duration
         if: github.event_name == 'schedule' || inputs.minutes == ''
@@ -83,7 +85,8 @@ jobs:
           WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
           WXREAD_MINUTES: ${{ github.event.inputs.minutes || steps.rand.outputs.minutes || '60' }}
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
-        run: python main.py
+          WXREAD_HEADLESS: '0'
+        run: xvfb-run -a python main.py
 
       - name: 微信推送 - 第①轮完成日报
         if: success()
@@ -234,6 +237,8 @@ jobs:
           pip install playwright
           playwright install chromium
           playwright install-deps
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+          echo "xvfb: $(which xvfb-run)"
 
       - name: Generate random duration
         if: github.event_name == 'schedule' || inputs.minutes == ''
@@ -250,7 +255,8 @@ jobs:
           WXREAD_BOOK: ${{ secrets.WXREAD_BOOK }}
           WXREAD_MINUTES: ${{ github.event.inputs.minutes || steps.rand.outputs.minutes || '60' }}
           WXREAD_PAGES: ${{ secrets.WXREAD_PAGES || '' }}
-        run: python main.py
+          WXREAD_HEADLESS: '0'
+        run: xvfb-run -a python main.py
 
       - name: 微信推送 - 第②轮完成日报
         if: success()
