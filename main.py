@@ -212,7 +212,10 @@ def main() -> int:
                 wait += random.randint(3000, 8000)
             page.wait_for_timeout(max(800, wait))
 
-            if i % 10 == 9:
+            # v14: renewal 默认关闭。实测手动 fetch /web/login/renewal（缺 x-wrpa-0 动态签名）
+            # 会被后端判异常 → 后续 read 信标全部 -2010、最终整个 skey 变 -2012。
+            # 关闭后实测 sent=21 accepted=20，全部 succ:1。
+            if i % 10 == 9 and os.environ.get("WXREAD_RENEWAL", "0") == "1":
                 try:
                     page.evaluate(
                         """async () => {
