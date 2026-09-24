@@ -24,9 +24,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Cookie 强校验（shelf/sync，无效快速失败不进入阅读循环）
+        id: preflight
         env:
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
         run: |
+          echo "started_at=$(date -u -d '+8 hours' '+%m-%d %H:%M')" >> "$GITHUB_OUTPUT"
           python3 - <<'PY'
           import json, os, urllib.request
           cookies = json.loads(os.environ["WXREAD_COOKIES"])
@@ -84,6 +86,7 @@ jobs:
           ACCEPTED: ${{ steps.reader.outputs.accepted }}
           ERR_CODES: ${{ steps.reader.outputs.err_codes }}
           READINFO: ${{ steps.reader.outputs.readinfo }}
+          STARTED: ${{ steps.preflight.outputs.started_at }}
         run: |
           if [ -z "$SC_KEY" ]; then
             echo "SC_SENDKEY 未设置，跳过微信推送"
@@ -92,6 +95,9 @@ jobs:
           NOW=$(date -u -d '+8 hours' '+%Y-%m-%d %H:%M')
           desp="**完成时间：** ${NOW}
           **第①轮时长：**【${MINUTES:-?}】分钟
+          **本轮启动：** ${STARTED:-?}（北京）｜**结束：** ${NOW}
+          **预计计入：** 约 ${ACCEPTED:-?} 分钟（后台接受信标数，手机端时长应与此一致）
+          **run：** ${{ github.run_id }}
           **阅读请求：** 发送 ${SENT:-?} 次 / 后台接受 ${ACCEPTED:-?} 次
           **errCode 分布：** \`${ERR_CODES:-n/a}\`
 
@@ -131,6 +137,7 @@ jobs:
           STATUS: ${{ steps.reader.outputs.status }}
           SENT: ${{ steps.reader.outputs.sent }}
           ERR_CODES: ${{ steps.reader.outputs.err_codes }}
+          STARTED: ${{ steps.preflight.outputs.started_at }}
         run: |
           if [ -z "$SC_KEY" ]; then
             echo "SC_SENDKEY 未设置，跳过微信推送"
@@ -150,7 +157,9 @@ jobs:
           curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
             --data-urlencode "title=❌【第①轮】微信读书任务失败：${REASON}" \
             --data-urlencode "desp=**失败时间：** ${NOW}
+            **本轮启动：** ${STARTED:-?}（北京）
             **失败原因：** ${REASON}
+            **run：** ${{ github.run_id }}
 
             **处理方法：**
             1. 本地浏览器登录 weread.qq.com
@@ -174,9 +183,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Cookie 强校验（shelf/sync，无效快速失败不进入阅读循环）
+        id: preflight
         env:
           WXREAD_COOKIES: ${{ secrets.WXREAD_COOKIES }}
         run: |
+          echo "started_at=$(date -u -d '+8 hours' '+%m-%d %H:%M')" >> "$GITHUB_OUTPUT"
           python3 - <<'PY'
           import json, os, urllib.request
           cookies = json.loads(os.environ["WXREAD_COOKIES"])
@@ -234,6 +245,7 @@ jobs:
           ACCEPTED: ${{ steps.reader.outputs.accepted }}
           ERR_CODES: ${{ steps.reader.outputs.err_codes }}
           READINFO: ${{ steps.reader.outputs.readinfo }}
+          STARTED: ${{ steps.preflight.outputs.started_at }}
         run: |
           if [ -z "$SC_KEY" ]; then
             echo "SC_SENDKEY 未设置，跳过微信推送"
@@ -242,6 +254,9 @@ jobs:
           NOW=$(date -u -d '+8 hours' '+%Y-%m-%d %H:%M')
           desp="**完成时间：** ${NOW}
           **第②轮时长：**【${MINUTES:-?}】分钟
+          **本轮启动：** ${STARTED:-?}（北京）｜**结束：** ${NOW}
+          **预计计入：** 约 ${ACCEPTED:-?} 分钟（后台接受信标数，手机端时长应与此一致）
+          **run：** ${{ github.run_id }}
           **阅读请求：** 发送 ${SENT:-?} 次 / 后台接受 ${ACCEPTED:-?} 次
           **errCode 分布：** \`${ERR_CODES:-n/a}\`
 
@@ -258,6 +273,7 @@ jobs:
           STATUS: ${{ steps.reader.outputs.status }}
           SENT: ${{ steps.reader.outputs.sent }}
           ERR_CODES: ${{ steps.reader.outputs.err_codes }}
+          STARTED: ${{ steps.preflight.outputs.started_at }}
         run: |
           if [ -z "$SC_KEY" ]; then
             echo "SC_SENDKEY 未设置，跳过微信推送"
@@ -277,7 +293,9 @@ jobs:
           curl -s -X POST "https://sctapi.ftqq.com/${SC_KEY}.send" \
             --data-urlencode "title=❌【第②轮】微信读书任务失败：${REASON}" \
             --data-urlencode "desp=**失败时间：** ${NOW}
+            **本轮启动：** ${STARTED:-?}（北京）
             **失败原因：** ${REASON}
+            **run：** ${{ github.run_id }}
 
             **处理方法：**
             1. 本地浏览器登录 weread.qq.com
