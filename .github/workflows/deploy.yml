@@ -5,8 +5,8 @@ permissions:
   issues: write
 
 on:
-  schedule:
-    - cron: '23 16 * * *'      # UTC 16:23 = 北京时间 00:23（避开整点高负载时段）
+  # schedule disabled 2026-09-25: daily auto-read moved to local CDP runner (Task Scheduler + debug Chrome).
+  # workflow_dispatch kept as cloud manual fallback.
   workflow_dispatch:
     inputs:
       minutes:
